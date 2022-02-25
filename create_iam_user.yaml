@@ -21,7 +21,7 @@ Parameters:
     Description: Comma Delimited List of KMS Key Arn used to encrypt ECR Repository(/ies).
   RepoName:
     Type: String
-    Description: Name of the ECR Repository. (e.g. slf_aws_infosec_analytics*)
+    Description: Name of the ECR Repository.
   RepoType:
     Type: String
     Default: Private
