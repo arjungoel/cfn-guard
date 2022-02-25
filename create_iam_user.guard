@@ -24,7 +24,7 @@ Resources.FuncUserAccessPolicy.Properties {
 
 let resources = Resources.*
 let all_resources = Resources.*
-let all_iam_roles = %all_resources[ Type == 'AWS::IAM::User' ]
+let all_iam_users = %all_resources[ Type == 'AWS::IAM::User' ]
 
 
 rule check_empty_resources {
@@ -58,7 +58,7 @@ rule check_business_unit {
 }
 
 # Neat way to write above code if you just want to target tagging as a whole 
-rule check_owners_role {
+rule check_owners_users {
     some %resources.Properties.Tags[*] {
         Key == /cost_centre$/
         Value == /^CostCentre/
