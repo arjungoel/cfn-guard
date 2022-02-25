@@ -1,0 +1,244 @@
+# version: 1.0
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This Template Deploys Basic AWS Functional User for creating ECR repository and ECR-CLI access.
+Parameters:
+  FuncUsername:
+    Type: String
+    Description: Name for Functional user
+    Default: drdc_ecr_func_user
+  TeamName:
+    Type: String
+    Description: Team name who is using ECR
+  CostCentre:
+    Type: String
+    Description: Cost Centre
+  BusinessUnit:
+    Type: String
+    Description: Business Unit
+  KMSKeyArn:
+    Type: String
+    Description: Comma Delimited List of KMS Key Arn used to encrypt ECR Repository(/ies).
+  RepoName:
+    Type: String
+    Description: Name of the ECR Repository. (e.g. slf_aws_infosec_analytics*)
+  RepoType:
+    Type: String
+    Default: Private
+    AllowedValues:
+      - Private
+      - Public
+  s3BucketAccess:
+    Type: String
+    Description: Comma delimited list of s3 buckets (no space after the comma) that the roles will need access to. Bucket ARN required.
+  AWSregion1:
+    Type: String
+    Description: Region resources are allowed to be created.
+    Default: ca-central-1
+    AllowedValues:
+      - ca-central-1
+      - us-east-1
+      - us-east-2
+      - ap-southeast-1
+      - ap-northeast-1
+      - eu-west-1
+      - eu-west-2
+  AWSregion2:
+    Type: String
+    Description: Optional - Only use if there are two allowed regions (aka us-east-1 and us-east-2)
+    AllowedValues:
+      - ""
+      - ca-central-1
+      - us-east-1
+      - us-east-2
+      - ap-southeast-1
+      - ap-northeast-1
+      - eu-west-1
+      - eu-west-2
+
+Conditions:
+  secondRegion:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: AWSregion2
+
+Resources:
+  FuncUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref FuncUsername
+      Tags:
+        - Key: cost_centre
+          Value: !Ref CostCentre
+        - Key: business_unit
+          Value: !Ref TeamName
+
+  FuncUserAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    DependsOn: FuncUser
+    Properties:
+      Users:
+        - !Ref FuncUsername
+      ManagedPolicyName: !Sub "${FuncUsername}_ecr_policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CreateECRRepository
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+            # Tagging and Scanning ECR Repository against CVE(s) and CVV(s)
+              - ecr:PutImageTagMutability
+              - ecr:PutImageScanningConfiguration
+              - ecr:StartImageScan
+              - ecr:TagResource
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${RepoName}"
+          # Tagging should be done while the time of creating the ECR Repository
+            Condition:
+              repoType: !Ref RepoType
+              StringLike:
+              #  aws:ResourceTag/resource_name: !Ref RepoName
+                aws:ResourceTag/primary_owner: "*"
+                aws:ResourceTag/secondary_owner: "*"
+          - Sid: ECRAccess  
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:DescribeImages
+              - ecr:BatchGetImage
+              - ecr:GetLifecyclePolicy
+              - ecr:GetLifecyclePolicyPreview
+              - ecr:ListTagsForResource
+              - ecr:DescribeImageScanFindings
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:RequestedRegion:
+                  Fn::If:
+                    - secondRegion
+                    - - !Ref AWSregion1
+                      - !Ref AWSregion2
+                    - !Ref AWSregion1
+          - Sid: ListImagesInRepository
+            Effect: Allow
+            Action:
+              - ecr:ListImages
+            Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${RepoName}
+          - Sid: GetAuthorizationToken
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: "*"
+          - Sid: ManageRepositoryContents
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:DescribeImages
+              - ecr:BatchGetImage
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+              - ecr:PutImage
+            Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/{RepoName}
+# You cannot disable or change the configuration once the repository will be created. Cross Account Encryption won't be supported as of now (confirmed with AWS)..
+          - Sid: KMSAccessforECR
+            Effect: Allow
+            Action:
+              - kms:CreateGrant
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:DescribeKey
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:RevokeGrant
+              - kms:ListGrants
+            Resource: !Split
+              - ","
+              - !Ref KMSKeyArn
+            Condition:
+              Bool:
+                aws:SecureTransport:
+                  - True
+          - Effect: "Allow"
+            Action:
+              - kms:ListAliases
+            Resource: "*"
+            Condition:
+              Bool:
+                aws:SecureTransport:
+                  - True
+          - Effect: "Allow"
+            Action:
+              - s3:ListBucketByTags
+              - s3:GetLifecycleConfiguration
+              - s3:GetBucketTagging
+              - s3:GetInventoryConfiguration
+              - s3:PutAnalyticsConfiguration
+              - s3:ListBucketVersions
+              - s3:GetBucketLogging
+              - s3:ListBucket
+              - s3:GetAccelerateConfiguration
+              - s3:GetBucketPolicy
+              - s3:GetEncryptionConfiguration
+              - s3:AbortMultipartUpload
+              - s3:PutBucketTagging
+              - s3:GetBucketRequestPayment
+              - s3:GetMetricsConfiguration
+              - s3:PutBucketVersioning
+              - s3:ListBucketMultipartUploads
+              - s3:GetBucketWebsite
+              - s3:GetBucketVersioning
+              - s3:GetBucketAcl
+              - s3:GetBucketNotification
+              - s3:GetReplicationConfiguration
+              - s3:PutInventoryConfiguration
+              - s3:ListMultipartUploadParts
+              - s3:GetBucketCORS
+              - s3:GetAnalyticsConfiguration
+              - s3:GetBucketLocation
+              - s3:DeleteObjectVersion
+              - s3:GetObjectVersionTagging
+              - s3:RestoreObject
+              - s3:GetObjectVersionTorrent
+              - s3:GetObjectAcl
+              - s3:GetObjectVersionAcl
+              - s3:GetObjectTagging
+              - s3:PutObjectTagging
+              - s3:DeleteObject
+              - s3:DeleteObjectTagging
+              - s3:PutObjectVersionTagging
+              - s3:DeleteObjectVersionTagging
+              - s3:PutObject
+              - s3:GetObject
+              - s3:GetObjectTorrent
+              - s3:GetAnalyticsConfiguration
+              - s3:GetObjectVersionForReplication
+              - s3:GetObjectVersion
+              - s3:PutObjectAcl
+              - s3:PutObjectVersion
+              - s3:PutObjectVersionAcl
+            Resource: !Split
+              - ","
+              - !Ref s3BucketAccess
+            Condition:
+              Bool:
+                aws:SecureTransport:
+                  - True
+          - Effect: "Allow"
+            Action:
+              - s3:ListAllMyBuckets
+              - s3:HeadBucket
+            Resource: "*"
+            Condition:
+              Bool:
+                aws:SecureTransport:
+                  - True 

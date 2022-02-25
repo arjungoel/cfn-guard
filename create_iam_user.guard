@@ -1,0 +1,78 @@
+let FuncUsername = "drdc_ecr_func_user"
+
+rule check_func_user_tags_and_policy {
+    Resources.FuncUser.Properties.Tags !empty
+    Resources.FuncUser.Properties.Tags is_list
+    Resources.FuncUserAccessPolicy.Properties.ManagedPolicyName == ["${FuncUsername}_ecr_policy"]
+}
+
+# cfn-guard doesn't support references to the parameters while validating the CloudFormation Templates.
+#rule check_username {
+#    Resources.FuncUser.Properties.UserName == %FuncUsername
+#}
+
+# Neat way of writing rules:
+Resources.FuncUser.Properties {
+    Tags !empty
+    Tags is_list
+}
+
+Resources.FuncUserAccessPolicy.Properties {
+    ManagedPolicyName == ["${FuncUsername}_ecr_policy"]
+}
+
+
+let resources = Resources.*
+let all_resources = Resources.*
+let all_iam_roles = %all_resources[ Type == 'AWS::IAM::User' ]
+
+
+rule check_empty_resources {
+    Resources.* != []
+    some %resources != []   # Another way of writing the code at line 4 by using the variable on line 1
+}
+
+
+rule check_iam_user_name_and_tags {
+    Resources.FuncUser.Properties.Tags !empty
+#    Resources.FuncUser.Properties.UserName == %FuncUsername
+    Resources.FuncUser.Properties.UserName is_string
+    Resources.FuncUser.Properties.Tags is_list
+
+}
+
+# rules for checking individual tag 
+
+rule check_cost_centre {
+    some %resources.Properties.Tags[*] {
+        Key == /cost_centre$/
+        Value == /^CostCentre/
+    }
+}
+
+rule check_business_unit {
+    some %resources.Properties.Tags[*] {
+        Key == /business_unit$/
+        Value == /^TeamName/
+    }
+}
+
+# Neat way to write above code if you just want to target tagging as a whole 
+rule check_owners_role {
+    some %resources.Properties.Tags[*] {
+        Key == /cost_centre$/
+        Value == /^CostCentre/
+    }
+    some %resources.Properties.Tags[*] {
+        Key == /business_unit$/
+        Value == /^TeamName/
+    }
+}
+
+
+rule check_iam_users_type {
+    let all_resources = Resources.*
+    some %all_resources.Type == 'AWS::IAM::User'
+}
+
+Resources.FuncUserAccessPolicy.Properties.PolicyDocument !empty
